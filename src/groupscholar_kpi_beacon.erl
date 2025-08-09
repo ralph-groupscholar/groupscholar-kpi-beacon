@@ -66,6 +66,14 @@ run_command("summary", Options) ->
         {error, Message} ->
             {error, Message}
     end;
+run_command("trend", Options) ->
+    Required = ["metric"],
+    case ensure_required(Required, Options) of
+        ok ->
+            trend_metric(Options);
+        {error, Message} ->
+            {error, Message}
+    end;
 run_command(Unknown, _Options) ->
     {error, io_lib:format("Unknown command: ~s", [Unknown])}.
 
@@ -113,6 +121,7 @@ usage() ->
         "  log --week YYYY-MM-DD --metric NAME --value NUM --unit UNIT [--program NAME] [--source NAME] [--notes TEXT]",
         "  list [--limit N] [--week YYYY-MM-DD]",
         "  summary --week YYYY-MM-DD",
+        "  trend --metric NAME [--limit N] [--unit UNIT]",
         "  help",
         "",
         "Environment:",
@@ -208,6 +217,36 @@ summarize_week(Options) ->
             {error, Error}
     end.
 
+trend_metric(Options) ->
+    Metric = maps:get("metric", Options),
+    Limit = maps:get("limit", Options, "8"),
+    Unit = maps:get("unit", Options, null),
+    case parse_integer(Limit) of
+        {ok, LimitValue} ->
+            case trend_filter(Metric, Unit) of
+                {ok, WhereClause, Params} ->
+                    with_connection(fun(Connection) ->
+                        Query = "SELECT week_start, unit, sum(value) "
+                            "FROM " ++ ?SCHEMA ++ ".kpi_entries "
+                            ++ WhereClause ++ " "
+                            "GROUP BY week_start, unit "
+                            "ORDER BY week_start DESC "
+                            "LIMIT $" ++ integer_to_list(length(Params) + 1),
+                        case epgsql:equery(Connection, Query, Params ++ [LimitValue]) of
+                            {ok, _Columns, Rows} ->
+                                print_trend(Rows),
+                                ok;
+                            {error, Error} ->
+                                {error, io_lib:format("Trend failed: ~p", [Error])}
+                        end
+                    end);
+                {error, Error} ->
+                    {error, Error}
+            end;
+        {error, Error} ->
+            {error, Error}
+    end.
+
 list_filter(null) ->
     {ok, "", []};
 list_filter(Week) ->
@@ -217,6 +256,11 @@ list_filter(Week) ->
         {error, Error} ->
             {error, Error}
     end.
+
+trend_filter(Metric, null) ->
+    {ok, "WHERE metric = $1", [Metric]};
+trend_filter(Metric, Unit) ->
+    {ok, "WHERE metric = $1 AND unit = $2", [Metric, Unit]}.
 
 print_rows([]) ->
     io:format("No KPI entries found.~n");
@@ -235,6 +279,14 @@ print_summary(Rows) ->
     lists:foreach(fun(Row) ->
         {Metric, Unit, SumValue} = Row,
         io:format("~s: ~p ~s~n", [Metric, SumValue, Unit])
+    end, Rows).
+
+print_trend([]) ->
+    io:format("No KPI trend data found.~n");
+print_trend(Rows) ->
+    lists:foreach(fun(Row) ->
+        {WeekStart, Unit, SumValue} = Row,
+        io:format("~p | ~p ~s~n", [WeekStart, SumValue, Unit])
     end, Rows).
 
 run_sql_file(Connection, Path) ->

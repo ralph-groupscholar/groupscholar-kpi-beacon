@@ -33,3 +33,15 @@ parse_args_log_test() ->
     ?assertEqual("log", Command),
     ?assertEqual("2026-02-02", maps:get("week", Options)),
     ?assertEqual("applications_reviewed", maps:get("metric", Options)).
+
+parse_args_trend_test() ->
+    {ok, Command, Options} = groupscholar_kpi_beacon:parse_args([
+        "trend",
+        "--metric", "scholar_engagement",
+        "--limit", "6",
+        "--unit", "points"
+    ]),
+    ?assertEqual("trend", Command),
+    ?assertEqual("scholar_engagement", maps:get("metric", Options)),
+    ?assertEqual("6", maps:get("limit", Options)),
+    ?assertEqual("points", maps:get("unit", Options)).

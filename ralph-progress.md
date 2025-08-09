@@ -5,3 +5,5 @@
 - Added Postgres schema + seed SQL and CLI commands (init/seed/log/list/summary).
 - Applied schema and seeded initial KPI data in the production Postgres database.
 - Added parsing tests and updated README with usage and env setup.
+- Added metric trend command with optional unit filter and limit handling.
+- Extended CLI tests and README examples for trend reporting.

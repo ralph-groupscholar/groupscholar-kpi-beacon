@@ -7,6 +7,7 @@ CLI for logging and summarizing weekly operational KPIs into the Group Scholar P
 - Log weekly KPI entries with optional program/source context.
 - List recent entries with optional week filters.
 - Summarize a week by KPI metric.
+- Trend a metric across recent weeks.
 
 ## Tech
 - Erlang (escript)
@@ -39,6 +40,7 @@ _build/default/bin/gs-kpi-beacon log --week 2026-02-02 --metric applications_rev
 _build/default/bin/gs-kpi-beacon list --limit 10
 _build/default/bin/gs-kpi-beacon list --week 2026-02-02
 _build/default/bin/gs-kpi-beacon summary --week 2026-02-02
+_build/default/bin/gs-kpi-beacon trend --metric applications_reviewed --limit 6 --unit applications
 ```
 
 ## Testing
