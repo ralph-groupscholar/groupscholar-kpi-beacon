@@ -8,6 +8,10 @@ parse_date_valid_test() ->
 parse_date_invalid_test() ->
     ?assertMatch({error, _}, groupscholar_kpi_beacon:parse_date("2026/02/02")).
 
+date_to_int_test() ->
+    {ok, Date} = groupscholar_kpi_beacon:parse_date("2026-02-02"),
+    ?assertEqual(20260202, groupscholar_kpi_beacon:date_to_int(Date)).
+
 parse_number_int_test() ->
     ?assertEqual({ok, 42}, groupscholar_kpi_beacon:parse_number("42")).
 

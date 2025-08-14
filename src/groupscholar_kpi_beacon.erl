@@ -4,7 +4,7 @@
 -export([main/1]).
 
 %% Test exports
--export([parse_args/1, parse_date/1, parse_number/1, parse_integer/1, valid_date_string/1]).
+-export([parse_args/1, parse_date/1, parse_number/1, parse_integer/1, valid_date_string/1, date_to_int/1]).
 
 -define(DEFAULT_DB_HOST, "db-acupinir.groupscholar.com").
 -define(DEFAULT_DB_PORT, 23947).
@@ -121,7 +121,7 @@ usage() ->
         "  log --week YYYY-MM-DD --metric NAME --value NUM --unit UNIT [--program NAME] [--source NAME] [--notes TEXT]",
         "  list [--limit N] [--week YYYY-MM-DD]",
         "  summary --week YYYY-MM-DD",
-        "  trend --metric NAME [--limit N] [--unit UNIT]",
+        "  trend --metric NAME [--limit N] [--unit UNIT] [--start YYYY-MM-DD --end YYYY-MM-DD] [--program NAME] [--source NAME]",
         "  help",
         "",
         "Environment:",
@@ -221,10 +221,20 @@ trend_metric(Options) ->
     Metric = maps:get("metric", Options),
     Limit = maps:get("limit", Options, "8"),
     Unit = maps:get("unit", Options, null),
+    Program = maps:get("program", Options, null),
+    Source = maps:get("source", Options, null),
+    Start = maps:get("start", Options, null),
+    End = maps:get("end", Options, null),
     case parse_integer(Limit) of
-        {ok, LimitValue} ->
-            case trend_filter(Metric, Unit) of
-                {ok, WhereClause, Params} ->
+        {ok, LimitValue} when LimitValue > 0 ->
+            case parse_trend_dates(Start, End) of
+                {ok, DateFilters} ->
+                    Filters = [{"metric", "=", Metric}] ++
+                        optional_filter("unit", Unit) ++
+                        optional_filter("program", Program) ++
+                        optional_filter("source", Source) ++
+                        DateFilters,
+                    {WhereClause, Params} = build_where(Filters),
                     with_connection(fun(Connection) ->
                         Query = "SELECT week_start, unit, sum(value) "
                             "FROM " ++ ?SCHEMA ++ ".kpi_entries "
@@ -243,6 +253,8 @@ trend_metric(Options) ->
                 {error, Error} ->
                     {error, Error}
             end;
+        {ok, _} ->
+            {error, "Limit must be a positive integer."};
         {error, Error} ->
             {error, Error}
     end.
@@ -257,10 +269,10 @@ list_filter(Week) ->
             {error, Error}
     end.
 
-trend_filter(Metric, null) ->
-    {ok, "WHERE metric = $1", [Metric]};
-trend_filter(Metric, Unit) ->
-    {ok, "WHERE metric = $1 AND unit = $2", [Metric, Unit]}.
+optional_filter(_Field, null) ->
+    [];
+optional_filter(Field, Value) ->
+    [{Field, "=", Value}].
 
 print_rows([]) ->
     io:format("No KPI entries found.~n");
@@ -378,6 +390,42 @@ parse_date(DateString) ->
         false ->
             {error, io_lib:format("Invalid date format: ~s (expected YYYY-MM-DD)", [DateString])}
     end.
+
+date_to_int({date, {Year, Month, Day}}) ->
+    (Year * 10000) + (Month * 100) + Day.
+
+parse_trend_dates(null, null) ->
+    {ok, []};
+parse_trend_dates(null, _End) ->
+    {error, "Both --start and --end are required for date range filtering."};
+parse_trend_dates(_Start, null) ->
+    {error, "Both --start and --end are required for date range filtering."};
+parse_trend_dates(Start, End) ->
+    case {parse_date(Start), parse_date(End)} of
+        {{ok, StartDate}, {ok, EndDate}} ->
+            case date_to_int(StartDate) =< date_to_int(EndDate) of
+                true ->
+                    {ok, [{"week_start", ">=", StartDate}, {"week_start", "<=", EndDate}]};
+                false ->
+                    {error, "Start date must be on or before end date."}
+            end;
+        {{error, Error}, _} ->
+            {error, Error};
+        {_, {error, Error}} ->
+            {error, Error}
+    end.
+
+build_where(Filters) ->
+    {Parts, Params, _} = lists:foldl(
+        fun({Field, Op, Value}, {AccParts, AccParams, Index}) ->
+            Placeholder = "$" ++ integer_to_list(Index),
+            Part = Field ++ " " ++ Op ++ " " ++ Placeholder,
+            {AccParts ++ [Part], AccParams ++ [Value], Index + 1}
+        end,
+        {[], [], 1},
+        Filters
+    ),
+    {"WHERE " ++ string:join(Parts, " AND "), Params}.
 
 parse_number(ValueString) when is_list(ValueString) ->
     case string:to_integer(ValueString) of
